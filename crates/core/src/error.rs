@@ -9,7 +9,7 @@ pub enum Error {
     Json { source: ErrorSource },
     #[error("invalid http request")]
     InvalidRequest { source: ErrorSource },
-    #[error("invalid tooltip data")]
+    #[error("invalid tooltip for action {id} of type {name}")]
     InvalidTooltip {
         source: Option<ErrorSource>,
         id: Uuid,
