@@ -15,5 +15,5 @@ pub(crate) struct Opt {
     #[structopt(short = "I", long, default_value = "20")]
     pub fetch_interval: u64,
     #[structopt(short = "m", long, default_value = "0")]
-    pub minimum_price: u32,
+    pub min_price: u32,
 }

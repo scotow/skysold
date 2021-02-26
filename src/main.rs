@@ -5,8 +5,7 @@ use std::error::Error;
 use std::collections::HashSet;
 use std::time::Duration;
 
-use lib::auction::{currents, Auction};
-use lib::auction_ext::AuctionExt;
+use lib::auction::{current, Auction};
 use nustify::notification::Builder;
 
 use options::Opt;
@@ -19,32 +18,27 @@ use futures_lite::future::block_on;
 fn main() -> Result<(), Box<dyn Error>> {
     let opt = Opt::from_args();
     block_on(async {
-        let mut previous = currents(&opt.hypixel_key, &opt.player).await?;
         let mut previous =
-            previous.iter()
+            current(&opt.hypixel_key, &opt.player).await?
                 .filled()
-                .min_price(opt.minimum_price)
-                .collect::<HashSet<_>>();
+                .min_price(opt.min_price);
 
         loop {
             Timer::after(Duration::from_secs(opt.fetch_interval)).await;
 
-            let mut current = match currents(&opt.hypixel_key, &opt.player).await {
+            let current = match current(&opt.hypixel_key, &opt.player).await {
                 Ok(auctions) => auctions,
                 Err(err) => {
                     eprintln!("cannot fetch current auctions: {:?}", err);
                     continue;
                 }
-            };
-            let mut current =
-                current.iter()
-                    .filled()
-                    .min_price(opt.minimum_price)
-                    .collect::<HashSet<_>>();
-            // remove_low(&mut current, opt.minimum_price);
+            }
+                .filled()
+                .min_price(opt.min_price);
 
-            if let Some((body, icon)) = body_icon(&previous, &current) {
+            if let Some((body, icon)) = body_icon(previous.as_ref(), current.as_ref()) {
                 let notification = Builder::new(body)
+                    .title("Hypixel | Skyblock | Auction House".to_owned())
                     .image_url(icon)
                     .build();
                 match nustify::send(&notification, &opt.ifttt_event, &opt.ifttt_key).await {
@@ -60,10 +54,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     })
 }
 
-// fn remove_low(auctions: &mut HashSet<Auction>, min: u32) {
-//     auctions.retain(|a| a.price >= min)
-// }
-
 fn total_sold<'a>(auctions: impl Iterator<Item=&'a Auction>) -> String {
     auctions
         .map(|a| a.price)
@@ -71,8 +61,8 @@ fn total_sold<'a>(auctions: impl Iterator<Item=&'a Auction>) -> String {
         .to_formatted_string(&Locale::en)
 }
 
-fn body_icon(previous: &HashSet<&Auction>, current: &HashSet<&Auction>) -> Option<(String, String)> {
-    let mut new = current.difference(&previous).copied().collect::<Vec<_>>();
+fn body_icon(previous: &HashSet<Auction>, current: &HashSet<Auction>) -> Option<(String, String)> {
+    let mut new = current.difference(&previous).collect::<Vec<_>>();
     if new.is_empty() {
         return None;
     }

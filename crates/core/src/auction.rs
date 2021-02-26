@@ -1,12 +1,39 @@
-use isahc::prelude::*;
-use serde::Deserialize;
-use std::collections::HashSet;
-use uuid::Uuid;
-use std::hash::{Hash, Hasher};
-use nbt::from_gzip_reader;
 use crate::error::Error::{self, *};
 use crate::auction::AuctionType::Bin;
+
+use std::hash::{Hash, Hasher};
+use std::collections::HashSet;
 use std::time::{SystemTime, UNIX_EPOCH};
+
+use uuid::Uuid;
+use serde::Deserialize;
+use nbt::from_gzip_reader;
+use isahc::prelude::*;
+
+pub struct Auctions(HashSet<Auction>);
+
+impl Auctions {
+    pub fn filled(mut self) -> Self {
+        self.0.retain(|a| a.sold);
+        self
+    }
+
+    pub fn auction_type(mut self, auction_type: AuctionType) -> Self {
+        self.0.retain(|a| a.auction_type == auction_type);
+        self
+    }
+
+    pub fn  min_price(mut self, price: u32) -> Self {
+        self.0.retain(|a| a.price >= price);
+        self
+    }
+}
+
+impl AsRef<HashSet<Auction>> for Auctions {
+    fn as_ref(&self) -> &HashSet<Auction> {
+        &self.0
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct Auction {
@@ -140,7 +167,7 @@ struct ItemBytes {
     data: String,
 }
 
-pub async fn currents(api_key: &Uuid, player: &Uuid) -> Result<HashSet<Auction>, Error> {
+pub async fn current(api_key: &Uuid, player: &Uuid) -> Result<Auctions, Error> {
     let url = format!(
         "https://api.hypixel.net/skyblock/auction?key={:x}&player={:x}",
         api_key.to_hyphenated_ref(),
@@ -156,7 +183,8 @@ pub async fn currents(api_key: &Uuid, player: &Uuid) -> Result<HashSet<Auction>,
         return Err(InvalidApiStatus)
     }
 
-    data.auctions.into_iter()
+    let set = data.auctions.into_iter()
         .map(|a| Auction::from_raw(a))
-        .collect()
+        .collect::<Result<HashSet<_>, Error>>()?;
+    Ok(Auctions(set))
 }
