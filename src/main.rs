@@ -5,7 +5,8 @@ use std::error::Error;
 use std::collections::HashSet;
 use std::time::Duration;
 
-use lib::auction::{filled, Auction};
+use lib::auction::{currents, Auction};
+use lib::auction_ext::AuctionExt;
 use nustify::notification::Builder;
 
 use options::Opt;
@@ -18,20 +19,29 @@ use futures_lite::future::block_on;
 fn main() -> Result<(), Box<dyn Error>> {
     let opt = Opt::from_args();
     block_on(async {
-        let mut previous = filled(&opt.hypixel_key, &opt.player).await?;
-        remove_low(&mut previous, opt.minimum_price);
+        let mut previous = currents(&opt.hypixel_key, &opt.player).await?;
+        let mut previous =
+            previous.iter()
+                .filled()
+                .min_price(opt.minimum_price)
+                .collect::<HashSet<_>>();
 
         loop {
             Timer::after(Duration::from_secs(opt.fetch_interval)).await;
 
-            let mut current = match filled(&opt.hypixel_key, &opt.player).await {
+            let mut current = match currents(&opt.hypixel_key, &opt.player).await {
                 Ok(auctions) => auctions,
                 Err(err) => {
                     eprintln!("cannot fetch current auctions: {:?}", err);
                     continue;
                 }
             };
-            remove_low(&mut current, opt.minimum_price);
+            let mut current =
+                current.iter()
+                    .filled()
+                    .min_price(opt.minimum_price)
+                    .collect::<HashSet<_>>();
+            // remove_low(&mut current, opt.minimum_price);
 
             if let Some((body, icon)) = body_icon(&previous, &current) {
                 let notification = Builder::new(body)
@@ -50,9 +60,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     })
 }
 
-fn remove_low(auctions: &mut HashSet<Auction>, min: u32) {
-    auctions.retain(|a| a.price >= min)
-}
+// fn remove_low(auctions: &mut HashSet<Auction>, min: u32) {
+//     auctions.retain(|a| a.price >= min)
+// }
 
 fn total_sold<'a>(auctions: impl Iterator<Item=&'a Auction>) -> String {
     auctions
@@ -61,8 +71,8 @@ fn total_sold<'a>(auctions: impl Iterator<Item=&'a Auction>) -> String {
         .to_formatted_string(&Locale::en)
 }
 
-fn body_icon(previous: &HashSet<Auction>, current: &HashSet<Auction>) -> Option<(String, String)> {
-    let mut new = current.difference(&previous).collect::<Vec<_>>();
+fn body_icon(previous: &HashSet<&Auction>, current: &HashSet<&Auction>) -> Option<(String, String)> {
+    let mut new = current.difference(&previous).copied().collect::<Vec<_>>();
     if new.is_empty() {
         return None;
     }
@@ -89,28 +99,27 @@ fn body_icon(previous: &HashSet<Auction>, current: &HashSet<Auction>) -> Option<
 
 #[cfg(test)]
 mod tests {
-    use lib::auction::Auction;
+    use lib::auction::{Auction, AuctionType};
     use std::collections::HashSet;
     use std::iter::FromIterator;
     use uuid::Uuid;
 
+    fn fake_auction(name: &str, id: &str, price: u32) -> Auction {
+        Auction {
+            id: Uuid::new_v3(&Uuid::NAMESPACE_URL, id.as_bytes()),
+            name: name.to_owned(),
+            item_id: id.to_owned(),
+            auction_type: AuctionType::Bin,
+            price,
+            sold: true
+        }
+    }
+
     #[test]
     fn total_sold() {
         let auctions = vec![
-            Auction {
-                id: Uuid::new_v3(&Uuid::NAMESPACE_URL, "ULTIMATE_CARROT_CANDY".as_bytes()),
-                name: "Ultimate Carrot Candy".to_owned(),
-                item_id: "ULTIMATE_CARROT_CANDY".to_owned(),
-                price: 14_000_000,
-                sold: true
-            },
-            Auction {
-                id: Uuid::new_v3(&Uuid::NAMESPACE_URL, "HEALING_RING".as_bytes()),
-                name: "Healing Ring".to_owned(),
-                item_id: "HEALING_RING".to_owned(),
-                price: 120_000,
-                sold: true
-            }
+            fake_auction("Ultimate Carrot Candy", "ULTIMATE_CARROT_CANDY", 14_000_000),
+            fake_auction("Healing Ring", "HEALING_RING", 120_000),
         ];
         assert_eq!(super::total_sold(auctions.iter()), "14,120,000");
     }
@@ -120,13 +129,7 @@ mod tests {
         let previous = HashSet::new();
         let current = HashSet::from_iter(
             vec![
-                Auction {
-                    id: Uuid::new_v3(&Uuid::NAMESPACE_URL, "ULTIMATE_CARROT_CANDY".as_bytes()),
-                    name: "Ultimate Carrot Candy".to_owned(),
-                    item_id: "ULTIMATE_CARROT_CANDY".to_owned(),
-                    price: 14_000_000,
-                    sold: true
-                }
+                fake_auction("Ultimate Carrot Candy", "ULTIMATE_CARROT_CANDY", 14_000_000),
             ]
         );
         let body_icon = super::body_icon(&previous, &current);
@@ -138,20 +141,8 @@ mod tests {
         let previous = current;
         let current = HashSet::from_iter(
             vec![
-                Auction {
-                    id: Uuid::new_v3(&Uuid::NAMESPACE_URL, "ULTIMATE_CARROT_CANDY".as_bytes()),
-                    name: "Ultimate Carrot Candy".to_owned(),
-                    item_id: "ULTIMATE_CARROT_CANDY".to_owned(),
-                    price: 14_000_000,
-                    sold: true
-                },
-                Auction {
-                    id: Uuid::new_v3(&Uuid::NAMESPACE_URL, "HEALING_RING".as_bytes()),
-                    name: "Healing Ring".to_owned(),
-                    item_id: "HEALING_RING".to_owned(),
-                    price: 120_000,
-                    sold: true
-                }
+                fake_auction("Ultimate Carrot Candy", "ULTIMATE_CARROT_CANDY", 14_000_000),
+                fake_auction("Healing Ring", "HEALING_RING", 120_000),
             ]
         );
         let body_icon = super::body_icon(&previous, &current);
@@ -163,20 +154,8 @@ mod tests {
         let previous = HashSet::new();
         let current = HashSet::from_iter(
             vec![
-                Auction {
-                    id: Uuid::new_v3(&Uuid::NAMESPACE_URL, "ULTIMATE_CARROT_CANDY".as_bytes()),
-                    name: "Ultimate Carrot Candy".to_owned(),
-                    item_id: "ULTIMATE_CARROT_CANDY".to_owned(),
-                    price: 14_000_000,
-                    sold: true
-                },
-                Auction {
-                    id: Uuid::new_v3(&Uuid::NAMESPACE_URL, "HEALING_RING".as_bytes()),
-                    name: "Healing Ring".to_owned(),
-                    item_id: "HEALING_RING".to_owned(),
-                    price: 120_000,
-                    sold: true
-                }
+                fake_auction("Ultimate Carrot Candy", "ULTIMATE_CARROT_CANDY", 14_000_000),
+                fake_auction("Healing Ring", "HEALING_RING", 120_000),
             ]
         );
         let body_icon = super::body_icon(&previous, &current);
@@ -188,20 +167,8 @@ mod tests {
         let previous = current;
         let current = HashSet::from_iter(
             vec![
-                Auction {
-                    id: Uuid::new_v3(&Uuid::NAMESPACE_URL, "ULTIMATE_CARROT_CANDY".as_bytes()),
-                    name: "Ultimate Carrot Candy".to_owned(),
-                    item_id: "ULTIMATE_CARROT_CANDY".to_owned(),
-                    price: 14_000_000,
-                    sold: true
-                },
-                Auction {
-                    id: Uuid::new_v3(&Uuid::NAMESPACE_URL, "HEALING_RING".as_bytes()),
-                    name: "Healing Ring".to_owned(),
-                    item_id: "HEALING_RING".to_owned(),
-                    price: 120_000,
-                    sold: true
-                }
+                fake_auction("Ultimate Carrot Candy", "ULTIMATE_CARROT_CANDY", 14_000_000),
+                fake_auction("Healing Ring", "HEALING_RING", 120_000),
             ]
         );
         let body_icon = super::body_icon(&previous, &current);
@@ -209,34 +176,10 @@ mod tests {
 
         let current = HashSet::from_iter(
             vec![
-                Auction {
-                    id: Uuid::new_v3(&Uuid::NAMESPACE_URL, "ULTIMATE_CARROT_CANDY".as_bytes()),
-                    name: "Ultimate Carrot Candy".to_owned(),
-                    item_id: "ULTIMATE_CARROT_CANDY".to_owned(),
-                    price: 14_000_000,
-                    sold: true
-                },
-                Auction {
-                    id: Uuid::new_v3(&Uuid::NAMESPACE_URL, "HEALING_RING".as_bytes()),
-                    name: "Healing Ring".to_owned(),
-                    item_id: "HEALING_RING".to_owned(),
-                    price: 120_000,
-                    sold: true
-                },
-                Auction {
-                    id: Uuid::new_v3(&Uuid::NAMESPACE_URL, "MIDAS_SWORD".as_bytes()),
-                    name: "Midas's Sword".to_owned(),
-                    item_id: "MIDAS_SWORD".to_owned(),
-                    price: 50_040_000,
-                    sold: true
-                },
-                Auction {
-                    id: Uuid::new_v3(&Uuid::NAMESPACE_URL, "SHREDDER".as_bytes()),
-                    name: "Shredder".to_owned(),
-                    item_id: "SHREDDER".to_owned(),
-                    price: 999_000,
-                    sold: true
-                }
+                fake_auction("Ultimate Carrot Candy", "ULTIMATE_CARROT_CANDY", 14_000_000),
+                fake_auction("Healing Ring", "HEALING_RING", 120_000),
+                fake_auction("Midas's Sword", "MIDAS_SWORD", 50_040_000),
+                fake_auction("Shredder", "SHREDDER", 999_000),
             ]
         );
         let body_icon = super::body_icon(&previous, &current);

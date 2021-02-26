@@ -5,14 +5,23 @@ use uuid::Uuid;
 use std::hash::{Hash, Hasher};
 use nbt::from_gzip_reader;
 use crate::error::Error::{self, *};
+use crate::auction::AuctionType::Bin;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Clone, Debug)]
 pub struct Auction {
     pub id: Uuid,
     pub name: String,
     pub item_id: String,
+    pub auction_type: AuctionType,
     pub price: u32,
     pub sold: bool,
+}
+
+#[derive(Copy, Clone, PartialEq, Debug)]
+pub enum AuctionType {
+    Auction,
+    Bin,
 }
 
 impl Auction {
@@ -56,13 +65,31 @@ impl Auction {
             id: raw.id,
             name: raw.name.clone(),
         })?;
+
+        let (auction_type, sold) = {
+            if raw.is_bin {
+                (Bin, raw.sold_price == raw.price)
+            } else {
+                let now =
+                    SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .map_err(|e| InvalidEndDate {
+                            source: e.into(),
+                            end: raw.end,
+                        })?
+                        .as_millis() as u64;
+                (AuctionType::Auction, now > raw.end)
+            }
+        };
+
         Ok(
             Auction {
                 id: raw.id,
                 name: raw.name.clone(),
                 item_id: item_id.tag.extra.item_id.clone(),
+                auction_type,
                 price: raw.price,
-                sold: raw.sold_price == raw.price
+                sold,
             }
         )
     }
@@ -97,12 +124,15 @@ struct AuctionRaw {
     id: Uuid,
     #[serde(rename = "item_name")]
     name: String,
+    #[serde(rename = "bin")]
+    is_bin: bool,
     #[serde(rename = "starting_bid")]
     price: u32,
     #[serde(rename = "highest_bid_amount")]
     sold_price: u32,
     #[serde(rename = "item_bytes")]
     tooltip: ItemBytes,
+    end: u64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -122,13 +152,11 @@ pub async fn currents(api_key: &Uuid, player: &Uuid) -> Result<HashSet<Auction>,
     let data = response.json::<HypixelResponse>().await
         .map_err(|e| Json { source: e.into() })?;
 
+    if !data.success {
+        return Err(InvalidApiStatus)
+    }
+
     data.auctions.into_iter()
         .map(|a| Auction::from_raw(a))
         .collect()
-}
-
-pub async fn filled(api_key: &Uuid, player: &Uuid) -> Result<HashSet<Auction>, Error> {
-    let mut currents = currents(api_key, player).await?;
-    currents.retain(|a| a.sold);
-    Ok(currents)
 }
