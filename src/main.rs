@@ -1,6 +1,5 @@
 mod options;
 
-use core::borrow::Borrow;
 use std::error::Error;
 use std::collections::HashSet;
 use std::time::Duration;
@@ -56,8 +55,8 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 fn total_sold<'a>(auctions: impl Iterator<Item=&'a Auction>) -> String {
     auctions
-        .map(|a| a.price)
-        .sum::<u32>()
+        .map(|a| a.price as u64)
+        .sum::<u64>()
         .to_formatted_string(&Locale::en)
 }
 
@@ -73,7 +72,7 @@ fn body_icon(previous: &HashSet<Auction>, current: &HashSet<Auction>) -> Option<
     } else {
         let (last, others) = new.split_last().unwrap();
         (
-            format!("{} and {}", others.iter().map(|a| a.name.borrow()).collect::<Vec<_>>().join(", "), last.name),
+            format!("{} and {}", others.iter().map(|a| a.name.as_ref()).collect::<Vec<_>>().join(", "), last.name),
             format!("a total of {}", total_sold(new.iter().copied()))
         )
     };
