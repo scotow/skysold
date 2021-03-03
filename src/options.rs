@@ -1,5 +1,5 @@
-use structopt::StructOpt;
 use uuid::Uuid;
+use structopt::StructOpt;
 
 #[derive(StructOpt, Debug)]
 #[structopt(name = "skysold")]

@@ -4,53 +4,52 @@ use std::error::Error;
 use std::collections::HashSet;
 use std::time::Duration;
 
-use lib::auction::{current, Auction};
+use lib::auction::{Auction, Auctions};
 use nustify::notification::Builder;
 
 use options::Opt;
 use structopt::StructOpt;
 
+use tokio::time::sleep;
 use num_format::{ToFormattedString, Locale};
-use async_io::Timer;
-use futures_lite::future::block_on;
 
-fn main() -> Result<(), Box<dyn Error>> {
+#[tokio::main(flavor = "current_thread")]
+async fn main() -> Result<(), Box<dyn Error>> {
     let opt = Opt::from_args();
-    block_on(async {
-        let mut previous =
-            current(&opt.hypixel_key, &opt.player).await?
-                .filled()
-                .min_price(opt.min_price);
 
-        loop {
-            Timer::after(Duration::from_secs(opt.fetch_interval)).await;
+    let mut previous =
+        Auctions::current(&opt.hypixel_key, &opt.player).await?
+            .filled()
+            .min_price(opt.min_price);
 
-            let current = match current(&opt.hypixel_key, &opt.player).await {
-                Ok(auctions) => auctions,
-                Err(err) => {
-                    eprintln!("cannot fetch current auctions: {:?}", err);
-                    continue;
-                }
+    loop {
+        sleep(Duration::from_secs(opt.fetch_interval)).await;
+
+        let current = match Auctions::current(&opt.hypixel_key, &opt.player).await {
+            Ok(auctions) => auctions,
+            Err(err) => {
+                eprintln!("cannot fetch current auctions: {:?}", err);
+                continue;
             }
-                .filled()
-                .min_price(opt.min_price);
-
-            if let Some((body, icon)) = body_icon(previous.as_ref(), current.as_ref()) {
-                let notification = Builder::new(body)
-                    .title("Hypixel | Skyblock | Auction House".to_owned())
-                    .image_url(icon)
-                    .build();
-                match nustify::send(&notification, &opt.ifttt_event, &opt.ifttt_key).await {
-                    Err(err) => {
-                        eprintln!("cannot send IFTTT notification: {:?}", err);
-                    },
-                    _ => ()
-                }
-            }
-
-            previous = current;
         }
-    })
+            .filled()
+            .min_price(opt.min_price);
+
+        if let Some((body, icon)) = body_icon(previous.as_ref(), current.as_ref()) {
+            let notification = Builder::new(body)
+                .title("Hypixel | Skyblock | Auction House".to_owned())
+                .image_url(icon)
+                .build();
+            match nustify::send(&notification, &opt.ifttt_event, &opt.ifttt_key).await {
+                Err(err) => {
+                    eprintln!("cannot send IFTTT notification: {:?}", err);
+                },
+                _ => ()
+            }
+        }
+
+        previous = current;
+    }
 }
 
 fn total_sold<'a>(auctions: impl Iterator<Item=&'a Auction>) -> String {

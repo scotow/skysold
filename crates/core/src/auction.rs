@@ -7,12 +7,40 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use uuid::Uuid;
 use serde::Deserialize;
-use nbt::from_gzip_reader;
-use isahc::prelude::*;
+use reqwest::StatusCode;
 
 pub struct Auctions(HashSet<Auction>);
 
 impl Auctions {
+    pub async fn current(api_key: &Uuid, player: &Uuid) -> Result<Auctions, Error> {
+        let url = format!(
+            "https://api.hypixel.net/skyblock/auction?key={:x}&player={:x}",
+            api_key.to_hyphenated_ref(),
+            player.to_simple_ref()
+        );
+        let response =
+            reqwest::get(&url).await
+                .map_err(|e| InvalidApiRequest { source: e.into() })?;
+        if response.status() != StatusCode::OK {
+            return Err(InvalidApiStatusCode { code: response.status().as_u16() })
+        }
+
+        let data =
+            response.json::<HypixelResponse>().await
+                .map_err(|e| InvalidApiResponse { source: e.into() })?;
+        if !data.success {
+            return Err(InvalidApiStatus);
+        }
+
+        Ok(
+            Auctions(
+                data.auctions.into_iter()
+                    .map(|a| Auction::from_raw(a))
+                    .collect::<Result<HashSet<_>, Error>>()?
+            )
+        )
+    }
+
     pub fn filled(mut self) -> Self {
         self.0.retain(|a| a.sold);
         self
@@ -23,7 +51,7 @@ impl Auctions {
         self
     }
 
-    pub fn  min_price(mut self, price: u32) -> Self {
+    pub fn min_price(mut self, price: u32) -> Self {
         self.0.retain(|a| a.price >= price);
         self
     }
@@ -59,30 +87,30 @@ impl Auction {
             base64::STANDARD
         );
 
-        #[derive(Debug, Deserialize)]
+        #[derive(Deserialize)]
         struct Tooltip {
             #[serde(rename = "i")]
             info: Vec<Info>,
         }
 
-        #[derive(Debug, Deserialize)]
+        #[derive(Deserialize)]
         struct Info {
             tag: Tag,
         }
 
-        #[derive(Debug, Deserialize)]
+        #[derive(Deserialize)]
         struct Tag {
             #[serde(rename = "ExtraAttributes")]
             extra: ExtraAttributes,
         }
 
-        #[derive(Debug, Deserialize)]
+        #[derive(Deserialize)]
         struct ExtraAttributes {
             #[serde(rename = "id")]
             item_id: String,
         }
 
-        let tooltip: Tooltip = from_gzip_reader(&mut b64_reader).map_err(|e| InvalidTooltip {
+        let tooltip: Tooltip = nbt::from_gzip_reader(&mut b64_reader).map_err(|e| InvalidTooltip {
             source: Some(e.into()),
             id: raw.id,
             name: raw.name.clone(),
@@ -139,13 +167,13 @@ impl Hash for Auction {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 struct HypixelResponse {
     success: bool,
-    auctions: Vec<AuctionRaw>
+    auctions: Vec<AuctionRaw>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 struct AuctionRaw {
     #[serde(rename = "uuid")]
     id: Uuid,
@@ -162,29 +190,7 @@ struct AuctionRaw {
     end: u64,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 struct ItemBytes {
     data: String,
-}
-
-pub async fn current(api_key: &Uuid, player: &Uuid) -> Result<Auctions, Error> {
-    let url = format!(
-        "https://api.hypixel.net/skyblock/auction?key={:x}&player={:x}",
-        api_key.to_hyphenated_ref(),
-        player.to_simple_ref()
-    );
-    let mut response =
-        isahc::get_async(url).await
-            .map_err(|e| InvalidRequest { source: e.into() })?;
-    let data = response.json::<HypixelResponse>().await
-        .map_err(|e| Json { source: e.into() })?;
-
-    if !data.success {
-        return Err(InvalidApiStatus)
-    }
-
-    let set = data.auctions.into_iter()
-        .map(|a| Auction::from_raw(a))
-        .collect::<Result<HashSet<_>, Error>>()?;
-    Ok(Auctions(set))
 }
