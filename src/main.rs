@@ -1,7 +1,6 @@
 mod options;
 
 use std::error::Error;
-use std::collections::HashSet;
 use std::time::Duration;
 
 use lib::auction::{Auction, Auctions};
@@ -25,17 +24,17 @@ async fn main() -> Result<(), Box<dyn Error>> {
     loop {
         sleep(Duration::from_secs(opt.fetch_interval)).await;
 
-        let current = match Auctions::current(&opt.hypixel_key, &opt.player).await {
+        let current_filled = match Auctions::current(&opt.hypixel_key, &opt.player).await {
             Ok(auctions) => auctions,
             Err(err) => {
                 eprintln!("cannot fetch current auctions: {:?}", err);
                 continue;
             }
         }
-            .filled()
-            .min_price(opt.min_price);
+            .filled();
+        let current = current_filled.clone().min_price(opt.min_price);
 
-        if let Some((body, icon)) = body_icon(previous.as_ref(), current.as_ref()) {
+        if let Some((body, icon)) = body_icon(&previous, &current, &current_filled) {
             let notification = Builder::new(body)
                 .title("Hypixel | Skyblock | Auction House".to_owned())
                 .image_url(icon)
@@ -59,8 +58,11 @@ fn total_sold<'a>(auctions: impl Iterator<Item=&'a Auction>) -> String {
         .to_formatted_string(&Locale::en)
 }
 
-fn body_icon(previous: &HashSet<Auction>, current: &HashSet<Auction>) -> Option<(String, String)> {
-    let mut new = current.difference(&previous).collect::<Vec<_>>();
+fn body_icon(previous: &Auctions, current: &Auctions, current_filled: &Auctions) -> Option<(String, String)> {
+    let mut new =
+        current
+            .difference(previous)
+            .collect::<Vec<_>>();
     if new.is_empty() {
         return None;
     }
@@ -76,9 +78,13 @@ fn body_icon(previous: &HashSet<Auction>, current: &HashSet<Auction>) -> Option<
         )
     };
     let mut body = format!("Your {} just sold for {} coins.", names, total);
-    if current.len() > new.len() {
+
+    if current_filled.len() > new.len() {
         body.push_str(
-            &format!("\n\nYou have a total of {} coins to claim from {} filled auctions.", total_sold(current.iter()), current.len())
+            &format!(
+                "\n\nYou have a total of {} coins to claim from {} filled auctions.",
+                total_sold(current_filled.iter()), current_filled.len()
+            )
         );
     }
 
@@ -87,9 +93,7 @@ fn body_icon(previous: &HashSet<Auction>, current: &HashSet<Auction>) -> Option<
 
 #[cfg(test)]
 mod tests {
-    use lib::auction::{Auction, AuctionType};
-    use std::collections::HashSet;
-    use std::iter::FromIterator;
+    use lib::auction::{Auction, AuctionType, Auctions};
     use uuid::Uuid;
 
     fn fake_auction(name: &str, id: &str, price: u32) -> Auction {
@@ -114,63 +118,127 @@ mod tests {
 
     #[test]
     fn body_icon() {
-        let previous = HashSet::new();
-        let current = HashSet::from_iter(
-            vec![
-                fake_auction("Ultimate Carrot Candy", "ULTIMATE_CARROT_CANDY", 14_000_000),
-            ]
-        );
-        let body_icon = super::body_icon(&previous, &current);
+        // One new, no previous.
+        let current = vec![
+            fake_auction("Ultimate Carrot Candy", "ULTIMATE_CARROT_CANDY", 14_000_000)
+        ].into_iter().collect();
+        let body_icon = super::body_icon(&Auctions::empty(), &current, &Auctions::empty());
         assert!(body_icon.is_some());
         let (body, icon) = body_icon.unwrap();
         assert_eq!(body, "Your Ultimate Carrot Candy just sold for 14,000,000 coins.");
         assert_eq!(icon, "https://sky.shiiyu.moe/item/ULTIMATE_CARROT_CANDY");
 
-        let previous = current;
-        let current = HashSet::from_iter(
-            vec![
-                fake_auction("Ultimate Carrot Candy", "ULTIMATE_CARROT_CANDY", 14_000_000),
-                fake_auction("Healing Ring", "HEALING_RING", 120_000),
-            ]
-        );
-        let body_icon = super::body_icon(&previous, &current);
+        // One new, one previous.
+        let all = vec![
+            fake_auction("Ultimate Carrot Candy", "ULTIMATE_CARROT_CANDY", 14_000_000),
+            fake_auction("Healing Ring", "HEALING_RING", 120_000),
+        ].into_iter().collect();
+        let previous = vec![
+            fake_auction("Ultimate Carrot Candy", "ULTIMATE_CARROT_CANDY", 14_000_000)
+        ].into_iter().collect();
+        let current = vec![
+            fake_auction("Ultimate Carrot Candy", "ULTIMATE_CARROT_CANDY", 14_000_000),
+            fake_auction("Healing Ring", "HEALING_RING", 120_000),
+        ].into_iter().collect();
+        let body_icon = super::body_icon(&previous, &current, &all);
         assert!(body_icon.is_some());
         let (body, icon) = body_icon.unwrap();
         assert_eq!(body, "Your Healing Ring just sold for 120,000 coins.\n\nYou have a total of 14,120,000 coins to claim from 2 filled auctions.");
         assert_eq!(icon, "https://sky.shiiyu.moe/item/HEALING_RING");
 
-        let previous = HashSet::new();
-        let current = HashSet::from_iter(
-            vec![
-                fake_auction("Ultimate Carrot Candy", "ULTIMATE_CARROT_CANDY", 14_000_000),
-                fake_auction("Healing Ring", "HEALING_RING", 120_000),
-            ]
-        );
-        let body_icon = super::body_icon(&previous, &current);
+        // Two new, no previous.
+        let all = vec![
+            fake_auction("Ultimate Carrot Candy", "ULTIMATE_CARROT_CANDY", 14_000_000),
+            fake_auction("Healing Ring", "HEALING_RING", 120_000),
+        ].into_iter().collect();
+        let current = vec![
+            fake_auction("Ultimate Carrot Candy", "ULTIMATE_CARROT_CANDY", 14_000_000),
+            fake_auction("Healing Ring", "HEALING_RING", 120_000),
+        ].into_iter().collect();
+        let body_icon = super::body_icon(&Auctions::empty(), &current, &all);
         assert!(body_icon.is_some());
         let (body, icon) = body_icon.unwrap();
         assert_eq!(body, "Your Healing Ring and Ultimate Carrot Candy just sold for a total of 14,120,000 coins.");
         assert_eq!(icon, "https://sky.shiiyu.moe/item/ULTIMATE_CARROT_CANDY");
 
-        let previous = current;
-        let current = HashSet::from_iter(
-            vec![
-                fake_auction("Ultimate Carrot Candy", "ULTIMATE_CARROT_CANDY", 14_000_000),
-                fake_auction("Healing Ring", "HEALING_RING", 120_000),
-            ]
-        );
-        let body_icon = super::body_icon(&previous, &current);
+        // Three new (one cheap), no previous.
+        let all = vec![
+            fake_auction("Ultimate Carrot Candy", "ULTIMATE_CARROT_CANDY", 14_000_000),
+            fake_auction("Healing Ring", "HEALING_RING", 120_000),
+            fake_auction("Raider Axe", "RAIDER_AXE", 90_000),
+        ].into_iter().collect();
+        let current = vec![
+            fake_auction("Ultimate Carrot Candy", "ULTIMATE_CARROT_CANDY", 14_000_000),
+            fake_auction("Healing Ring", "HEALING_RING", 120_000),
+        ].into_iter().collect();
+        let body_icon = super::body_icon(&Auctions::empty(), &current, &all);
+        assert!(body_icon.is_some());
+        let (body, icon) = body_icon.unwrap();
+        assert_eq!(body, "Your Healing Ring and Ultimate Carrot Candy just sold for a total of 14,120,000 coins.\n\nYou have a total of 14,210,000 coins to claim from 3 filled auctions.");
+        assert_eq!(icon, "https://sky.shiiyu.moe/item/ULTIMATE_CARROT_CANDY");
+
+        // One new, one previous (cheap).
+        let all = vec![
+            fake_auction("Ultimate Carrot Candy", "ULTIMATE_CARROT_CANDY", 14_000_000),
+            fake_auction("Raider Axe", "RAIDER_AXE", 90_000),
+        ].into_iter().collect();
+        let current = vec![
+            fake_auction("Ultimate Carrot Candy", "ULTIMATE_CARROT_CANDY", 14_000_000),
+        ].into_iter().collect();
+        let body_icon = super::body_icon(&Auctions::empty(), &current, &all);
+        assert!(body_icon.is_some());
+        let (body, icon) = body_icon.unwrap();
+        assert_eq!(body, "Your Ultimate Carrot Candy just sold for 14,000,000 coins.\n\nYou have a total of 14,090,000 coins to claim from 2 filled auctions.");
+        assert_eq!(icon, "https://sky.shiiyu.moe/item/ULTIMATE_CARROT_CANDY");
+
+        // One new (cheap), one previous.
+        let all = vec![
+            fake_auction("Ultimate Carrot Candy", "ULTIMATE_CARROT_CANDY", 14_000_000),
+            fake_auction("Raider Axe", "RAIDER_AXE", 90_000),
+        ].into_iter().collect();
+        let previous = vec![
+            fake_auction("Ultimate Carrot Candy", "ULTIMATE_CARROT_CANDY", 14_000_000),
+        ].into_iter().collect();
+        let current = vec![
+            fake_auction("Ultimate Carrot Candy", "ULTIMATE_CARROT_CANDY", 14_000_000),
+        ].into_iter().collect();
+        let body_icon = super::body_icon(&previous, &current, &all);
         assert!(body_icon.is_none());
 
-        let current = HashSet::from_iter(
-            vec![
-                fake_auction("Ultimate Carrot Candy", "ULTIMATE_CARROT_CANDY", 14_000_000),
-                fake_auction("Healing Ring", "HEALING_RING", 120_000),
-                fake_auction("Midas's Sword", "MIDAS_SWORD", 50_040_000),
-                fake_auction("Shredder", "SHREDDER", 999_000),
-            ]
-        );
-        let body_icon = super::body_icon(&previous, &current);
+        // No new, two previous.
+        let all = vec![
+            fake_auction("Ultimate Carrot Candy", "ULTIMATE_CARROT_CANDY", 14_000_000),
+            fake_auction("Healing Ring", "HEALING_RING", 120_000),
+        ].into_iter().collect();
+        let previous = vec![
+            fake_auction("Ultimate Carrot Candy", "ULTIMATE_CARROT_CANDY", 14_000_000),
+            fake_auction("Healing Ring", "HEALING_RING", 120_000),
+        ].into_iter().collect();
+        let current = vec![
+            fake_auction("Ultimate Carrot Candy", "ULTIMATE_CARROT_CANDY", 14_000_000),
+            fake_auction("Healing Ring", "HEALING_RING", 120_000),
+        ].into_iter().collect();
+        let body_icon = super::body_icon(&previous, &current, &all);
+        assert!(body_icon.is_none());
+
+        // Two new (cheaper first), two previous.
+        let all = vec![
+            fake_auction("Ultimate Carrot Candy", "ULTIMATE_CARROT_CANDY", 14_000_000),
+            fake_auction("Healing Ring", "HEALING_RING", 120_000),
+            fake_auction("Midas's Sword", "MIDAS_SWORD", 50_040_000),
+            fake_auction("Shredder", "SHREDDER", 999_000),
+        ].into_iter().collect();
+        let previous = vec![
+            fake_auction("Ultimate Carrot Candy", "ULTIMATE_CARROT_CANDY", 14_000_000),
+            fake_auction("Healing Ring", "HEALING_RING", 120_000),
+        ].into_iter().collect();
+        let current = vec![
+            fake_auction("Ultimate Carrot Candy", "ULTIMATE_CARROT_CANDY", 14_000_000),
+            fake_auction("Healing Ring", "HEALING_RING", 120_000),
+            fake_auction("Midas's Sword", "MIDAS_SWORD", 50_040_000),
+            fake_auction("Shredder", "SHREDDER", 999_000),
+        ].into_iter().collect();
+        let body_icon = super::body_icon(&previous, &current, &all);
         assert!(body_icon.is_some());
         let (body, icon) = body_icon.unwrap();
         assert_eq!(body, "Your Shredder and Midas\'s Sword just sold for a total of 51,039,000 coins.\n\nYou have a total of 65,159,000 coins to claim from 4 filled auctions.");

@@ -8,11 +8,22 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
 use serde::Deserialize;
 use reqwest::StatusCode;
+use std::ops::Deref;
+use std::iter::FromIterator;
 
+#[derive(Clone, Debug, Default)]
 pub struct Auctions(HashSet<Auction>);
 
 impl Auctions {
-    pub async fn current(api_key: &Uuid, player: &Uuid) -> Result<Auctions, Error> {
+    pub fn new(auctions: HashSet<Auction>) -> Self {
+        Self(auctions)
+    }
+
+    pub fn empty() -> Self {
+        Self(HashSet::new())
+    }
+
+    pub async fn current(api_key: &Uuid, player: &Uuid) -> Result<Self, Error> {
         let url = format!(
             "https://api.hypixel.net/skyblock/auction?key={:x}&player={:x}",
             api_key.to_hyphenated_ref(),
@@ -57,9 +68,17 @@ impl Auctions {
     }
 }
 
-impl AsRef<HashSet<Auction>> for Auctions {
-    fn as_ref(&self) -> &HashSet<Auction> {
+impl Deref for Auctions {
+    type Target = HashSet<Auction>;
+
+    fn deref(&self) -> &Self::Target {
         &self.0
+    }
+}
+
+impl FromIterator<Auction> for Auctions {
+    fn from_iter<T: IntoIterator<Item=Auction>>(iter: T) -> Self {
+        Self(HashSet::from_iter(iter))
     }
 }
 
