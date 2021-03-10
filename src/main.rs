@@ -82,7 +82,7 @@ fn body_icon(previous: &Auctions, current: &Auctions, current_filled: &Auctions)
     if current_filled.len() > new.len() {
         body.push_str(
             &format!(
-                "\n\nYou have a total of {} coins to claim from {} filled auctions.",
+                " You have a total of {} coins to claim from {} filled auctions.",
                 total_sold(current_filled.iter()), current_filled.len()
             )
         );
@@ -143,7 +143,7 @@ mod tests {
         let body_icon = super::body_icon(&previous, &current, &all);
         assert!(body_icon.is_some());
         let (body, icon) = body_icon.unwrap();
-        assert_eq!(body, "Your Healing Ring just sold for 120,000 coins.\n\nYou have a total of 14,120,000 coins to claim from 2 filled auctions.");
+        assert_eq!(body, "Your Healing Ring just sold for 120,000 coins. You have a total of 14,120,000 coins to claim from 2 filled auctions.");
         assert_eq!(icon, "https://sky.shiiyu.moe/item/HEALING_RING");
 
         // Two new, no previous.
@@ -174,7 +174,7 @@ mod tests {
         let body_icon = super::body_icon(&Auctions::empty(), &current, &all);
         assert!(body_icon.is_some());
         let (body, icon) = body_icon.unwrap();
-        assert_eq!(body, "Your Healing Ring and Ultimate Carrot Candy just sold for a total of 14,120,000 coins.\n\nYou have a total of 14,210,000 coins to claim from 3 filled auctions.");
+        assert_eq!(body, "Your Healing Ring and Ultimate Carrot Candy just sold for a total of 14,120,000 coins. You have a total of 14,210,000 coins to claim from 3 filled auctions.");
         assert_eq!(icon, "https://sky.shiiyu.moe/item/ULTIMATE_CARROT_CANDY");
 
         // One new, one previous (cheap).
@@ -188,7 +188,7 @@ mod tests {
         let body_icon = super::body_icon(&Auctions::empty(), &current, &all);
         assert!(body_icon.is_some());
         let (body, icon) = body_icon.unwrap();
-        assert_eq!(body, "Your Ultimate Carrot Candy just sold for 14,000,000 coins.\n\nYou have a total of 14,090,000 coins to claim from 2 filled auctions.");
+        assert_eq!(body, "Your Ultimate Carrot Candy just sold for 14,000,000 coins. You have a total of 14,090,000 coins to claim from 2 filled auctions.");
         assert_eq!(icon, "https://sky.shiiyu.moe/item/ULTIMATE_CARROT_CANDY");
 
         // One new (cheap), one previous.
@@ -241,7 +241,7 @@ mod tests {
         let body_icon = super::body_icon(&previous, &current, &all);
         assert!(body_icon.is_some());
         let (body, icon) = body_icon.unwrap();
-        assert_eq!(body, "Your Shredder and Midas\'s Sword just sold for a total of 51,039,000 coins.\n\nYou have a total of 65,159,000 coins to claim from 4 filled auctions.");
+        assert_eq!(body, "Your Shredder and Midas\'s Sword just sold for a total of 51,039,000 coins. You have a total of 65,159,000 coins to claim from 4 filled auctions.");
         assert_eq!(icon, "https://sky.shiiyu.moe/item/MIDAS_SWORD");
     }
 }
