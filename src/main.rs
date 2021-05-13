@@ -4,7 +4,7 @@ use std::error::Error;
 use std::time::Duration;
 
 use lib::auction::{Auction, Auctions};
-use nustify::notification::Builder;
+use nustify::Builder;
 
 use options::Opt;
 use structopt::StructOpt;
@@ -69,11 +69,11 @@ fn body_icon(previous: &Auctions, current: &Auctions, current_filled: &Auctions)
     new.sort_by_key(|a| a.price);
 
     let (names, total) = if new.len() == 1 {
-        (new[0].name.clone(), new[0].price.to_formatted_string(&Locale::en))
+        (format_auction(new[0]), new[0].price.to_formatted_string(&Locale::en))
     } else {
         let (last, others) = new.split_last().unwrap();
         (
-            format!("{} and {}", others.iter().map(|a| a.name.as_ref()).collect::<Vec<_>>().join(", "), last.name),
+            format!("{} and {}", others.iter().map(|a| format_auction(a)).collect::<Vec<_>>().join(", "), last.name),
             format!("a total of {}", total_sold(new.iter().copied()))
         )
     };
@@ -91,6 +91,14 @@ fn body_icon(previous: &Auctions, current: &Auctions, current_filled: &Auctions)
     Some((body, new.last().unwrap().icon_url()))
 }
 
+fn format_auction(auction: &Auction) -> String {
+    if auction.quantity == 1 {
+        auction.name.clone()
+    } else {
+        format!("{} x{}", auction.name, auction.quantity)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use lib::auction::{Auction, AuctionType, Auctions};
@@ -101,6 +109,7 @@ mod tests {
             id: Uuid::new_v3(&Uuid::NAMESPACE_URL, id.as_bytes()),
             name: name.to_owned(),
             item_id: id.to_owned(),
+            quantity: 1,
             auction_type: AuctionType::Bin,
             price,
             sold: true

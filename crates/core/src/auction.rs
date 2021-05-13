@@ -87,6 +87,7 @@ pub struct Auction {
     pub id: Uuid,
     pub name: String,
     pub item_id: String,
+    pub quantity: u8,
     pub auction_type: AuctionType,
     pub price: u32,
     pub sold: bool,
@@ -115,6 +116,8 @@ impl Auction {
         #[derive(Deserialize)]
         struct Info {
             tag: Tag,
+            #[serde(rename = "Count")]
+            count: u8,
         }
 
         #[derive(Deserialize)]
@@ -159,8 +162,9 @@ impl Auction {
         Ok(
             Auction {
                 id: raw.id,
-                name: raw.name.clone(),
+                name: raw.name,
                 item_id: item_id.tag.extra.item_id.clone(),
+                quantity: item_id.count,
                 auction_type,
                 price: raw.price,
                 sold,
@@ -178,6 +182,7 @@ impl PartialEq for Auction {
         self.id == other.id
     }
 }
+
 impl Eq for Auction {}
 
 impl Hash for Auction {

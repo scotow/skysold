@@ -1,6 +1,6 @@
 [package]
 name = "skysold"
-version = "0.4.2"
+version = "0.5.0"
 authors = ["Scotow <contact@scotow.com>"]
 edition = "2018"
 
@@ -13,7 +13,7 @@ name = "skysold"
 
 [dependencies]
 lib = { path = "crates/core", package = "skysold-lib" }
-nustify = { git = "https://github.com/scotow/nustify", tag = "0.2.1" }
+nustify = "0.2.2"
 tokio = {version = "1.2", features = ["macros", "time"] }
 uuid = { version = "0.8", features = ["serde"] }
 num-format = "0.4"
