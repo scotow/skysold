@@ -203,7 +203,7 @@ struct AuctionRaw {
     id: Uuid,
     #[serde(rename = "item_name")]
     name: String,
-    #[serde(rename = "bin")]
+    #[serde(rename = "bin", default)]
     is_bin: bool,
     #[serde(rename = "starting_bid")]
     price: u32,
